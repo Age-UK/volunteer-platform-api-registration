@@ -119,4 +119,4 @@ e.g. https://n0000000000.execute-api.eu-west-2.amazonaws.com/dev/divisions
 This should return an array of divisions.
 
 ## License
-[MIT](https://choosealicense.com/licenses/mit/)
+[GNU](https://choosealicense.com/licenses/gpl-3.0/)
