@@ -1,0 +1,146 @@
+service: auk-volunteer-platform-public
+package:
+  individually: true
+  excludeDevDependencies: true
+provider:
+  name: aws
+  runtime: nodejs12.x
+  stage: ${opt:stage, 'dev'} # stages defined in custom below
+  region: eu-west-2
+  memorySize: 1024
+  iamRoleStatements:
+    # For deploying in VPC
+    - Effect: Allow
+      Action:
+        - ec2:CreateNetworkInterface
+        - ec2:DescribeNetworkInterfaces
+        - ec2:DeleteNetworkInterface
+      Resource: "*"
+    - Effect: "Allow"
+      Action:
+        - "sns:Publish"
+      Resource:
+        - "Ref" : "VolPlatformPublicSnsEventsTopic"
+  environment:
+    databaseName: ${env:DATABASE_NAME}
+    databaseUser: ${env:DATABASE_USER}
+    databasePassword: ${env:DATABASE_PASSWORD}
+    databaseHost: ${env:DATABASE_HOST}
+    databasePort: ${env:DATABASE_PORT}
+    databaseSSL: RDS
+    snsTopic: ${self:custom.sns.topic}
+    feDomain: ${env:FE_PROTOCOL}
+    DEFAULT_LAYER_ROOT: ${env.DEFAULT_LAYER_ROOT, '/opt'}
+
+# app: aukvol
+# tenant: aukvol
+
+plugins:
+  - serverless-offline
+  - serverless-plugin-typescript-express # configuration helper for typescript on serverless
+  - serverless-dotenv-plugin
+  - serverless-latest-layer-version
+
+frameworkVersion: '2'
+
+custom:
+  # Allowed stages for the stage manager
+  stages:
+    - local
+    - dev
+    - stage
+    - production
+  
+  serverless-offline:
+    noPrependStageInUrl: true
+    useDocker: true
+
+  # Namespace and other globals
+  namespace: ${self:service}-${self:provider.stage}
+
+  # Public domain alias for cloudfront
+  publicDomain: ${env:FE_DOMAIN}
+  VOLPLATFORM_LAYER_ARN: ${env:VOLPLATFORM_LAYER_ARN}
+  VOLNODEJS_LAYER_ARN: ${env:VOLNODEJS_LAYER_ARN}
+  SECURITY_GROUP_ID: ${env:SECURITY_GROUP_ID}
+  SUBNET_A_ID: ${env:SUBNET_A_ID}
+  SUBNET_B_ID: ${env:SUBNET_B_ID}
+
+  # SNS
+  sns:
+    topics:
+      local: ${env:SNS_TOPIC, ''}
+      dev:
+        Ref: VolPlatformPublicSnsEventsTopic
+      stage:
+        Ref: VolPlatformPublicSnsEventsTopic
+      production:
+        Ref: VolPlatformPublicSnsEventsTopic
+    topic: ${self:custom.sns.topics.${self:provider.stage}}
+
+functions:
+  app:
+    handler: src/server.handler
+    events:
+      - sns:
+          arn:
+            Ref: VolPlatformPublicSnsEventsTopic
+          topicName: ${self:custom.namespace}-events-topic
+      - http: 
+          path: /
+          method: ANY
+          cors:
+            origins:
+              - '*'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - access-control-allow-origin
+              - pragma
+              - cache-control
+      - http: 
+          path: /{proxy+}
+          method: ANY
+          cors:
+            origins:
+              - '*'
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - access-control-allow-origin
+              - pragma
+              - cache-control
+    layers:
+      - ${self:custom.VOLNODEJS_LAYER_ARN}
+      - ${self:custom.VOLPLATFORM_LAYER_ARN}
+    vpc:
+      securityGroupIds:
+        - ${self:custom.SECURITY_GROUP_ID}
+      subnetIds:
+        - ${self:custom.SUBNET_A_ID}
+        - ${self:custom.SUBNET_B_ID}
+
+# CloudFormation resource templates here
+resources:
+  Resources:
+    # SNS
+    VolPlatformPublicSnsEventsTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        DisplayName: ${self:custom.namespace} Events Topic
+        TopicName: ${self:custom.namespace}-events-topic
+
+  # Cloudformation outputs
+  Outputs:
+    VolPlatformPublicSnsEventTopicArn:
+      Description: The ARN for the sns event topic
+      Value:
+        Ref: VolPlatformPublicSnsEventsTopic
+      Export:
+        Name: VolPlatformPublicSnsEventTopicArn

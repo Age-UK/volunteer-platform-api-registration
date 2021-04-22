@@ -1,0 +1,15 @@
+# package directories
+node_modules
+jspm_packages
+
+# Serverless directories
+.serverless
+.serverless-offline
+
+#VS Code workspace
+
+#TS dist folder
+dist
+
+
+layers
